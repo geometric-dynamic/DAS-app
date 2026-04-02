@@ -8,6 +8,8 @@ export function Greet(arg1:string):Promise<string>;
 
 export function LogPrintln(arg1:string):Promise<number>;
 
+export function MarkFrontendReady():Promise<void>;
+
 export function NewDataNotify():Promise<void>;
 
 export function StartGlobalStats():Promise<void>;

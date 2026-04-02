@@ -14,6 +14,10 @@ export function LogPrintln(arg1) {
   return window['go']['main']['App']['LogPrintln'](arg1);
 }
 
+export function MarkFrontendReady() {
+  return window['go']['main']['App']['MarkFrontendReady']();
+}
+
 export function NewDataNotify() {
   return window['go']['main']['App']['NewDataNotify']();
 }

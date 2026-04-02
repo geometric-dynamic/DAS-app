@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -14,7 +15,9 @@ type AppState struct {
 
 // App struct
 type App struct {
-	ctx context.Context
+	ctx           context.Context
+	frontendReady bool
+	readyMu       sync.Mutex
 }
 
 // NewApp creates a new App application struct
@@ -26,7 +29,21 @@ func NewApp() *App {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	StartCM01Manager()
+}
+
+func (a *App) MarkFrontendReady() {
+	a.readyMu.Lock()
+	alreadyReady := a.frontendReady
+	a.frontendReady = true
+	a.readyMu.Unlock()
+
+	if alreadyReady {
+		a.NewDataNotify()
+		return
+	}
+
+	StartExternalAcquisition()
+	a.NewDataNotify()
 }
 
 // Greet returns a greeting for the given name
