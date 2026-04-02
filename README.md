@@ -21,3 +21,53 @@
 </div>
 
 On this console, you can view data from all distributed nodes in real time and export data from any node.
+
+## Build
+
+### One-command multi-platform build
+
+This repository provides a unified build entry at `scripts/build-all.sh`.
+
+It will:
+
+- read the version from the current git tag
+- fall back to `dev` when the current commit is not exactly on a tag
+- build one or more Wails targets
+- place renamed artifacts in `dist/`
+
+Output naming format:
+
+`DAS-Console_<version>_<os>_<arch>`
+
+Examples:
+
+- `DAS-Console_v0.1.0_windows_amd64.exe`
+- `DAS-Console_v0.1.0_linux_amd64`
+- `DAS-Console_dev_windows_amd64.exe`
+
+### Usage
+
+Build default targets:
+
+```bash
+bash scripts/build-all.sh
+```
+
+Build specific targets:
+
+```bash
+bash scripts/build-all.sh --targets linux/amd64,windows/amd64
+```
+
+Build and also generate the Windows NSIS installer:
+
+```bash
+bash scripts/build-all.sh --targets windows/amd64 --nsis
+```
+
+### Notes
+
+- Default targets are `linux/amd64` and `windows/amd64`.
+- Cross-compiling depends on your local toolchain. If the current machine cannot build a target, the script will print a clear error and continue with the remaining targets.
+- macOS targets usually require an appropriate macOS build environment/toolchain.
+- The raw Wails build output remains in `build/bin/`, while normalized deliverables are collected into `dist/`.
