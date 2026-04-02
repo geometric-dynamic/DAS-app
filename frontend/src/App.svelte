@@ -1,7 +1,7 @@
 <script lang="ts">
 	import NodeRenderer from "./NodeRenderer.svelte"
 	import type { TypeAppState, TypeNode } from "./Node"
-	import { GetAppState, StartGlobalStats, StartRecording, StartSim, StopGlobalStats, StopRecording, StopSim } from "../wailsjs/go/main/App.js"
+	import { GetAppState, MarkFrontendReady, StartGlobalStats, StartRecording, StartSim, StopGlobalStats, StopRecording, StopSim } from "../wailsjs/go/main/App.js"
 	import { EventsOn } from '../wailsjs/runtime';
 	import { onMount } from "svelte"
 
@@ -31,6 +31,7 @@
 		EventsOn("recording-state", (active) => {
 			recordingActive = Boolean(active)
 		})
+		MarkFrontendReady()
 	})
 
 	function normalizeAppState(state: unknown): TypeAppState {

@@ -48,12 +48,24 @@ type CM01Manager struct {
 	conn     *net.UDPConn
 	sessions map[string]*cm01Session
 	paused   bool
+	started  bool
 }
 
 var cm01Manager = &CM01Manager{sessions: make(map[string]*cm01Session)}
 
 func StartCM01Manager() {
+	cm01Manager.mu.Lock()
+	if cm01Manager.started {
+		cm01Manager.mu.Unlock()
+		return
+	}
+	cm01Manager.started = true
+	cm01Manager.mu.Unlock()
 	go cm01Manager.run()
+}
+
+func StartExternalAcquisition() {
+	StartCM01Manager()
 }
 
 func PauseExternalAcquisition() {
