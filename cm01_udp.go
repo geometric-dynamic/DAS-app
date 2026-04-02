@@ -139,7 +139,11 @@ func (m *CM01Manager) touchSession(ip string) *cm01Session {
 		m.sessions[ip] = session
 		if _, exists := nodes[nodeKey]; !exists {
 			node := &Node{}
+			if simulating {
+				StopSim()
+			}
 			node.InitFrom(ScanData{Type: cm01TypeCode, Tick: 0, Mac: mac})
+			node.Source = "external"
 			node.Name = "CM01-" + strings.ReplaceAll(ip, ".", "-")
 			node.TypeName = NodeTypeMap[cm01TypeCode].Name
 			nodes[nodeKey] = node

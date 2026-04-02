@@ -7,6 +7,11 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+type AppState struct {
+	Simulating       bool `json:"simulating"`
+	HasExternalNodes bool `json:"hasExternalNodes"`
+}
+
 // App struct
 type App struct {
 	ctx context.Context
@@ -49,6 +54,13 @@ func (a *App) StopSim() {
 	ResumeExternalAcquisition()
 }
 
+func (a *App) GetAppState() AppState {
+	return AppState{
+		Simulating:       IsSimulating(),
+		HasExternalNodes: HasExternalNodes(),
+	}
+}
+
 func (a *App) StartGlobalStats() {
 	statsManager.Start()
 }
@@ -72,4 +84,5 @@ func (a *App) StopRecording() {
 
 func (a *App) NewDataNotify() {
 	runtime.EventsEmit(a.ctx, "new-data", nodes)
+	runtime.EventsEmit(a.ctx, "app-state", a.GetAppState())
 }

@@ -190,6 +190,7 @@ type Node struct {
 	Name     string
 	TypeCode uint16
 	TypeName string
+	Source   string
 	Battery  int
 	RSSI     int
 	Mac      [6]uint8
@@ -225,6 +226,9 @@ func (n *Node) InitFrom(data ScanData) {
 	n.startTime = time.Now()
 	n.startIdx = data.Index
 	n.TypeCode = data.Type
+	if n.Source == "" {
+		n.Source = "external"
+	}
 	if def, ok := NodeTypeMap[data.Type]; ok {
 		n.TypeName = def.Name
 		n.Metrics = make([]*MetricSeries, 0, len(def.Metrics))
@@ -605,4 +609,13 @@ func MacStr(mac [6]byte) string {
 		macStr += fmt.Sprintf("%02x", mac[i])
 	}
 	return macStr
+}
+
+func HasExternalNodes() bool {
+	for _, node := range nodes {
+		if node != nil && node.Source == "external" {
+			return true
+		}
+	}
+	return false
 }

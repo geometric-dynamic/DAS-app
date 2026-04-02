@@ -21,6 +21,7 @@ export interface TypeNode {
 	Name: string
 	TypeCode: number
 	TypeName: string
+	Source: "sim" | "external"
 	Battery: number
 	RSSI: number
 	Mac: number[]
@@ -28,4 +29,9 @@ export interface TypeNode {
 	AxisX: number[]
 	Metrics: TypeMetric[]
 	Stats: TypeStat[]
+}
+
+export interface TypeAppState {
+	Simulating: boolean
+	HasExternalNodes: boolean
 }
