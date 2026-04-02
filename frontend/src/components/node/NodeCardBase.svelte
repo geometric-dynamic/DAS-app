@@ -1,5 +1,6 @@
 <script lang="ts">
 	import UPlot from "../../UPlot.svelte"
+	import { onDestroy } from "svelte"
 	import type { TypeMetric, TypeNode, TypeStat } from "../../Node"
 
 	export let node: TypeNode
@@ -25,7 +26,58 @@
 		: [{}, {}]
 
 	$: macAddress = node.Mac.map((b) => b.toString(16).padStart(2, "0")).join(":").toUpperCase()
-	$: data = selectedMetric ? [node.AxisX, selectedMetric.AxisY] : [[], []]
+	let data: number[][] = [[], []]
+	let displayedEndIndex = 0
+	let targetEndIndex = 0
+	let playbackTimer: number | null = null
+
+	$: if (selectedMetric) {
+		targetEndIndex = Math.min(node.AxisX.length, selectedMetric.AxisY.length)
+		if (targetEndIndex < displayedEndIndex) {
+			displayedEndIndex = targetEndIndex
+		}
+		data = [node.AxisX.slice(0, displayedEndIndex), selectedMetric.AxisY.slice(0, displayedEndIndex)]
+		ensurePlayback()
+	} else {
+		data = [[], []]
+		displayedEndIndex = 0
+		targetEndIndex = 0
+	}
+
+	function ensurePlayback() {
+		if (playbackTimer != null || !selectedMetric) return
+		if (displayedEndIndex >= targetEndIndex) return
+		let lastFrameAt = performance.now()
+		const tick = () => {
+			if (!selectedMetric) {
+				playbackTimer = null
+				return
+			}
+			const now = performance.now()
+			const sourceX = node.AxisX
+			const sourceY = selectedMetric.AxisY
+			targetEndIndex = Math.min(sourceX.length, sourceY.length)
+			if (displayedEndIndex >= targetEndIndex) {
+				playbackTimer = null
+				return
+			}
+			let steps = 1
+			const prevIdx = Math.max(0, displayedEndIndex - 1)
+			const nextIdx = Math.min(targetEndIndex - 1, displayedEndIndex)
+			const deltaTs = Math.max(1, sourceX[nextIdx] - sourceX[prevIdx])
+			const elapsed = Math.max(1, now - lastFrameAt)
+			steps = Math.max(1, Math.floor(elapsed / deltaTs))
+			displayedEndIndex = Math.min(targetEndIndex, displayedEndIndex + steps)
+			data = [sourceX.slice(0, displayedEndIndex), sourceY.slice(0, displayedEndIndex)]
+			lastFrameAt = now
+			playbackTimer = requestAnimationFrame(tick)
+		}
+		playbackTimer = requestAnimationFrame(tick)
+	}
+
+	onDestroy(() => {
+		if (playbackTimer != null) cancelAnimationFrame(playbackTimer)
+	})
 
 	function formatLocalTime(timestamp: number | Date): string {
 		const date = new Date(timestamp)
@@ -44,30 +96,29 @@
 	}
 </script>
 
-<div class="flex gap-1">
-	<div class="flex-0 border-2 rounded-xl border-gray-400">
+<div class="flex gap-1 text-base-content">
+	<div class="flex-0 border-2 rounded-xl border-base-300 bg-base-200">
 		<div class="w-40 mt-2 flex flex-row gap-1 justify-center">
 			{#each node.Leds as led}
 				{#if led}
-					<div class="w-3 h-3 m-1 rounded-full bg-neutral-50"></div>
+					<div class="w-3 h-3 m-1 rounded-full bg-base-content"></div>
 				{:else}
-					<div class="w-3 h-3 m-1 rounded-full border-2 border-neutral-600"></div>
+					<div class="w-3 h-3 m-1 rounded-full border-2 border-base-300"></div>
 				{/if}
 			{/each}
 		</div>
 		<div class="w-40 m-1 flex justify-center">
 			<span class="text-xl font-bold text-center">{node.Name}</span>
 		</div>
-		<div class="w-40 m-1 flex justify-center text-sm text-neutral-400">
+		<div class="w-40 m-1 flex justify-center text-sm text-base-content/70">
 			<span>{node.TypeName}</span>
 		</div>
 		<div class="w-40 m-1 px-2 flex flex-col gap-1">
 			{#each metrics as metric, index}
 				{@const isSelected = selectedMetricIndex === index}
 				<button
-					class="flex items-center justify-between rounded-md border px-2 py-1 text-left transition-colors"
-					class:bg-neutral-800={isSelected}
-					class:border-neutral-700={!isSelected}
+					class="flex items-center justify-between rounded-md border border-base-300 bg-base-100 px-2 py-1 text-left text-base-content transition-colors"
+					class:bg-base-200={isSelected}
 					on:click={() => selectMetric(index)}
 					style:border-color={isSelected ? metric.Color : undefined}
 					style:box-shadow={isSelected ? `0 0 0 1px ${metric.Color} inset` : undefined}
@@ -85,8 +136,8 @@
 		{#if stats.length > 0}
 			<div class="w-40 m-1 px-2 flex flex-col gap-1">
 				{#each stats as stat}
-					<div class="rounded-md border border-neutral-700 px-2 py-1 text-sm flex justify-between">
-						<span class="text-neutral-400">{stat.Name}</span>
+					<div class="rounded-md border border-base-300 bg-base-100 px-2 py-1 text-sm flex justify-between">
+						<span class="text-base-content/70">{stat.Name}</span>
 						<span class="font-bold">{stat.Value.toFixed(stat.Digit)} {stat.Unit}</span>
 					</div>
 				{/each}
@@ -94,7 +145,7 @@
 		{/if}
 
 		<div class="w-40 m-1 flex justify-center">
-			<div class="flex flex-col text-xs text-neutral-500">
+			<div class="flex flex-col text-xs text-base-content/60">
 				<span>{macAddress}</span>
 				<span>RSSI:{node.RSSI.toFixed(0)}dB</span>
 				<span>BATT:{node.Battery.toFixed(0)}%</span>
@@ -102,7 +153,7 @@
 		</div>
 	</div>
 	{#if showChart}
-		<div class="flex-1 border-2 rounded-xl border-gray-400">
+		<div class="flex-1 border-2 rounded-xl border-base-300 bg-base-100">
 			{#key chartKey}
 				<UPlot {series} {data} />
 			{/key}

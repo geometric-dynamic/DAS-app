@@ -111,7 +111,7 @@ func (ms *SimMetricState) update() {
 
 func newSimNode(tp uint16) (*Node, *SimState) {
 	def := NodeTypeMap[tp]
-	node := &Node{}
+	node := &Node{Source: "sim"}
 	node.InitFrom(ScanData{
 		Index: uint32(rand.Intn(65536)),
 		Type:  tp,
@@ -152,6 +152,10 @@ func generateSimNodes(count int) {
 }
 
 var simulating bool = false
+
+func IsSimulating() bool {
+	return simulating
+}
 
 func StartSim(count int) {
 	generateSimNodes(count)

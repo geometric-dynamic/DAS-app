@@ -1,13 +1,14 @@
 <script lang="ts">
 	import NodeRenderer from "./NodeRenderer.svelte"
-	import type { TypeNode } from "./Node"
-	import { StartGlobalStats, StartRecording, StartSim, StopGlobalStats, StopRecording, StopSim } from "../wailsjs/go/main/App.js"
+	import type { TypeAppState, TypeNode } from "./Node"
+	import { GetAppState, StartGlobalStats, StartRecording, StartSim, StopGlobalStats, StopRecording, StopSim } from "../wailsjs/go/main/App.js"
 	import { EventsOn } from '../wailsjs/runtime';
 	import { onMount } from "svelte"
 
 	let showChart = false
 	let statsActive = false
 	let recordingActive = false
+	let appState: TypeAppState = { Simulating: false, HasExternalNodes: false }
 	const headerStyle = "top-0 left-0 right-0 h-14"
 	const footerStyle = "bottom-0 left-0 right-0 h-10"
 
@@ -15,16 +16,46 @@
 
 	onMount(() => {
 		StopSim()
+		GetAppState().then((state) => {
+			appState = normalizeAppState(state)
+		})
 		EventsOn("new-data", (data) => {
 			nodes = []
 			Object.values(data).forEach(node => {
 				nodes.push(node as TypeNode)
 			})
 		});
+		EventsOn("app-state", (state) => {
+			appState = normalizeAppState(state)
+		})
 		EventsOn("recording-state", (active) => {
 			recordingActive = Boolean(active)
 		})
 	})
+
+	function normalizeAppState(state: unknown): TypeAppState {
+		const value = (state ?? {}) as {
+			Simulating?: boolean
+			HasExternalNodes?: boolean
+			simulating?: boolean
+			hasExternalNodes?: boolean
+		}
+		return {
+			Simulating: Boolean(value.Simulating ?? value.simulating),
+			HasExternalNodes: Boolean(value.HasExternalNodes ?? value.hasExternalNodes),
+		}
+	}
+
+	async function toggleSim() {
+		if (appState.HasExternalNodes) return
+		if (appState.Simulating) {
+			await StopSim()
+			appState = { ...appState, Simulating: false }
+			return
+		}
+		await StartSim(16)
+		appState = { ...appState, Simulating: true }
+	}
 
 	async function toggleRecording() {
 		if (recordingActive) {
@@ -48,26 +79,20 @@
 </script>
 
 <header
-	class={`fixed ${headerStyle} backdrop-blur-sm bg-black/30 border-b z-50 flex items-center px-4`}
+	class={`fixed ${headerStyle} bg-base-100/88 border-b border-base-300 text-base-content z-50 flex items-center px-4`}
 >
-	<div class="text-3xl font-bold">DAS Console</div>
+	<div class="text-3xl font-bold select-none">DAS Console</div>
 
 	<div class="ml-auto flex items-center gap-2">
 		
 		<button
 			class="btn btn-outline btn-info btn-sm"
-			on:click={() => (StartSim(16))}
-			title="Start simulation"
+			on:click={toggleSim}
+			title={appState.HasExternalNodes ? "真实节点在线时不可模拟" : appState.Simulating ? "Stop simulation" : "Start simulation"}
+			disabled={appState.HasExternalNodes}
+			class:btn-active={appState.Simulating}
 		>
-		<span class="">Start Sim</span>
-		</button>
-
-		<button
-			class="btn btn-outline btn-info btn-sm"
-			on:click={StopSim}
-			title="Stop simulation"
-		>
-		<span class="">Stop Sim</span>
+		<span class="">{appState.Simulating ? "停止模拟" : "开始模拟"}</span>
 		</button>
 
 		<button class="btn btn-outline btn-warning btn-sm" class:btn-active={statsActive} on:click={toggleStats}>
@@ -124,7 +149,7 @@
 	</div>
 </header>
 <div class={headerStyle}></div>
-<main class="my-2">
+<main class="my-2 text-base-content">
 	<div
 		class="flex gap-1 flex-wrap"
 		class:flex-col={showChart}
@@ -137,10 +162,10 @@
 </main>
 <div class={footerStyle}></div>
 <footer
-	class={`fixed ${footerStyle} border-t z-40 backdrop-blur-sm bg-black/30 flex items-center px-4 gap-2`}
+	class={`fixed ${footerStyle} border-t border-base-300 z-40 bg-base-100/88 text-base-content flex items-center px-4 gap-2`}
 >
-	<div class="text-sm text-gray-400">节点数: {nodes.length}</div>
-	<div class="ml-auto text-sm text-gray-500">统计: {statsActive ? "进行中" : "未开始"} | 录制: {recordingActive ? "进行中" : "未开始"}</div>
+	<div class="text-sm text-base-content/70 select-none">节点数: {nodes.length}</div>
+	<div class="ml-auto text-sm text-base-content/60 select-none">模拟: {appState.Simulating ? "进行中" : "未开始"} | 统计: {statsActive ? "进行中" : "未开始"} | 录制: {recordingActive ? "进行中" : "未开始"}</div>
 </footer>
 
 <style>

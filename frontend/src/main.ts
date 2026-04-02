@@ -3,6 +3,8 @@ import './style.css'
 import "./app.css"
 import App from './App.svelte'
 
+document.documentElement.setAttribute('data-theme', 'xianii')
+
 const target = document.getElementById('app')
 
 if (!target) {
