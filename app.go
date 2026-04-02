@@ -36,13 +36,38 @@ func (a *App) LogPrintln(log string) (len int) {
 
 func (a *App) StartSim(count int) {
 	PauseExternalAcquisition()
+	recorderManager.Stop()
+	statsManager.Stop()
 	StopSim()
 	StartSim(count)
 }
 
 func (a *App) StopSim() {
+	recorderManager.Stop()
+	statsManager.Stop()
 	StopSim()
 	ResumeExternalAcquisition()
+}
+
+func (a *App) StartGlobalStats() {
+	statsManager.Start()
+}
+
+func (a *App) StopGlobalStats() {
+	statsManager.Stop()
+}
+
+func (a *App) StartRecording() error {
+	if err := recorderManager.Start(); err != nil {
+		return err
+	}
+	runtime.EventsEmit(a.ctx, "recording-state", true)
+	return nil
+}
+
+func (a *App) StopRecording() {
+	recorderManager.Stop()
+	runtime.EventsEmit(a.ctx, "recording-state", false)
 }
 
 func (a *App) NewDataNotify() {
