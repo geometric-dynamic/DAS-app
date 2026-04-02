@@ -1,11 +1,13 @@
 <script lang="ts">
-	import Node from "./Node.svelte"
+	import NodeRenderer from "./NodeRenderer.svelte"
 	import type { TypeNode } from "./Node"
-	import { LogPrintln, StartSim, StopSim } from "../wailsjs/go/main/App.js"
+	import { StartGlobalStats, StartRecording, StartSim, StopGlobalStats, StopRecording, StopSim } from "../wailsjs/go/main/App.js"
 	import { EventsOn } from '../wailsjs/runtime';
 	import { onMount } from "svelte"
 
 	let showChart = false
+	let statsActive = false
+	let recordingActive = false
 	const headerStyle = "top-0 left-0 right-0 h-14"
 	const footerStyle = "bottom-0 left-0 right-0 h-10"
 
@@ -14,13 +16,35 @@
 	onMount(() => {
 		StopSim()
 		EventsOn("new-data", (data) => {
-			// console.log(data)
 			nodes = []
 			Object.values(data).forEach(node => {
 				nodes.push(node as TypeNode)
 			})
 		});
+		EventsOn("recording-state", (active) => {
+			recordingActive = Boolean(active)
+		})
 	})
+
+	async function toggleRecording() {
+		if (recordingActive) {
+			await StopRecording()
+			recordingActive = false
+			return
+		}
+		await StartRecording()
+		recordingActive = true
+	}
+
+	async function toggleStats() {
+		if (statsActive) {
+			await StopGlobalStats()
+			statsActive = false
+			return
+		}
+		await StartGlobalStats()
+		statsActive = true
+	}
 </script>
 
 <header
@@ -44,6 +68,14 @@
 			title="Stop simulation"
 		>
 		<span class="">Stop Sim</span>
+		</button>
+
+		<button class="btn btn-outline btn-warning btn-sm" class:btn-active={statsActive} on:click={toggleStats}>
+			<span>{statsActive ? "结束统计" : "开始统计"}</span>
+		</button>
+
+		<button class="btn btn-outline btn-secondary btn-sm" class:btn-active={recordingActive} on:click={toggleRecording}>
+			<span>{recordingActive ? "停止录制" : "开始录制"}</span>
 		</button>
 
 		<!-- Grid view button (active when showChart is false) -->
@@ -99,7 +131,7 @@
 		class:flex-row={!showChart}
 	>
 		{#each nodes as node}
-			<Node {node} {showChart} />
+			<NodeRenderer {node} {showChart} />
 		{/each}
 	</div>
 </main>
@@ -107,11 +139,8 @@
 <footer
 	class={`fixed ${footerStyle} border-t z-40 backdrop-blur-sm bg-black/30 flex items-center px-4 gap-2`}
 >
-	<button class="btn btn-sm">Action 1</button>
-	<button class="btn btn-sm">Action 2</button>
-	<button class="btn btn-sm">Action 3</button>
-	<button class="btn btn-sm">Action 4</button>
-	<div class="ml-auto text-sm text-gray-500">Placeholder footer</div>
+	<div class="text-sm text-gray-400">节点数: {nodes.length}</div>
+	<div class="ml-auto text-sm text-gray-500">统计: {statsActive ? "进行中" : "未开始"} | 录制: {recordingActive ? "进行中" : "未开始"}</div>
 </footer>
 
 <style>

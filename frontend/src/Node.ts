@@ -9,6 +9,14 @@ export interface TypeMetric {
 	AxisY: number[]
 }
 
+export interface TypeStat {
+	Key: string
+	Name: string
+	Unit: string
+	Digit: number
+	Value: number
+}
+
 export interface TypeNode {
 	Name: string
 	TypeCode: number
@@ -19,4 +27,5 @@ export interface TypeNode {
 	Leds: number[]
 	AxisX: number[]
 	Metrics: TypeMetric[]
+	Stats: TypeStat[]
 }
