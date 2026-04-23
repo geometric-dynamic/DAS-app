@@ -1,7 +1,8 @@
 <script lang="ts">
 	import NodeRenderer from "./NodeRenderer.svelte"
-	import type { TypeAppState, TypeNode } from "./Node"
-	import { GetAppState, MarkFrontendReady, StartGlobalStats, StartRecording, StartSim, StopGlobalStats, StopRecording, StopSim } from "../wailsjs/go/main/App.js"
+	import DiscoveredNodeCard from "./components/node/DiscoveredNodeCard.svelte"
+	import type { TypeAppState, TypeDiscoveredNode, TypeFrontendState, TypeNode } from "./Node"
+	import { ConnectNode, GetFrontendState, MarkFrontendReady, StartGlobalStats, StartRecording, StartSim, StopGlobalStats, StopRecording, StopSim } from "../wailsjs/go/main/App"
 	import { EventsOn } from '../wailsjs/runtime';
 	import { onMount } from "svelte"
 
@@ -13,18 +14,31 @@
 	const footerStyle = "bottom-0 left-0 right-0 h-10"
 
 	let nodes: TypeNode[] = []
+	let discoveredNodes: TypeDiscoveredNode[] = []
+	let connectPending: string[] = []
+	let connectErrors: Record<string, string> = {}
+	let showUdevDialog = false
+	let udevFixCommand = ""
+	const psurcUdevErrorTag = "PSURC_UDEV_PERMISSION"
+
+	type DisplayCard =
+		| { kind: "connected"; nodeKey: string; sortName: string; node: TypeNode }
+		| { kind: "discovered"; nodeKey: string; sortName: string; discovered: TypeDiscoveredNode }
+
+	$: connectedNodeKeys = new Set(nodes.map((node) => getNodeKey(node)))
+	$: displayCards = buildDisplayCards(nodes, discoveredNodes)
 
 	onMount(() => {
 		StopSim()
-		GetAppState().then((state) => {
-			appState = normalizeAppState(state)
+		GetFrontendState().then((state) => {
+			applyFrontendState(state)
 		})
 		EventsOn("new-data", (data) => {
-			nodes = []
-			Object.values(data).forEach(node => {
-				nodes.push(node as TypeNode)
-			})
+			applyNodes(data)
 		});
+		EventsOn("discovered-nodes", (data) => {
+			applyDiscoveredNodes(data)
+		})
 		EventsOn("app-state", (state) => {
 			appState = normalizeAppState(state)
 		})
@@ -33,6 +47,55 @@
 		})
 		MarkFrontendReady()
 	})
+
+	function applyNodes(data: unknown) {
+		nodes = Object.values((data ?? {}) as Record<string, TypeNode>) as TypeNode[]
+	}
+
+	function applyDiscoveredNodes(data: unknown) {
+		discoveredNodes = (Object.values((data ?? {}) as Record<string, TypeDiscoveredNode>) as TypeDiscoveredNode[])
+			.sort((a: TypeDiscoveredNode, b: TypeDiscoveredNode) => Number(b.online) - Number(a.online) || (a.name ?? "").localeCompare(b.name ?? ""))
+	}
+
+	function applyFrontendState(state: unknown) {
+		const value = (state ?? {}) as TypeFrontendState
+		applyNodes(value.Nodes)
+		applyDiscoveredNodes(value.DiscoveredNodes)
+		appState = normalizeAppState(value.AppState)
+	}
+
+	function getNodeKey(node: TypeNode): string {
+		return (node.Mac ?? []).map((b) => b.toString(16).padStart(2, "0")).join("").toLowerCase()
+	}
+
+	function buildDisplayCards(nodes: TypeNode[], discoveredNodes: TypeDiscoveredNode[]): DisplayCard[] {
+		const connectedCards: DisplayCard[] = nodes.map((node) => ({
+			kind: "connected",
+			nodeKey: getNodeKey(node),
+			sortName: node.Name ?? "",
+			node,
+		}))
+		const connectedNodeKeys = new Set(connectedCards.map((item) => item.nodeKey))
+		const connectedMacKeys = new Set(nodes.map((node) => (node.Mac ?? []).map((b) => b.toString(16).padStart(2, "0")).join("").toLowerCase()))
+		const discoveredCards: DisplayCard[] = discoveredNodes
+			.filter((node) => {
+				if (connectedNodeKeys.has(node.nodeKey)) return false
+				const discoveredMac = (node.mac ?? []).map((b) => b.toString(16).padStart(2, "0")).join("").toLowerCase()
+				if (discoveredMac && connectedMacKeys.has(discoveredMac)) return false
+				return true
+			})
+			.map((discovered) => ({
+				kind: "discovered",
+				nodeKey: discovered.nodeKey,
+				sortName: discovered.name ?? discovered.ip ?? discovered.nodeKey,
+				discovered,
+			}))
+
+		return [...connectedCards, ...discoveredCards].sort((a, b) => {
+			if (a.kind !== b.kind) return a.kind === "connected" ? -1 : 1
+			return a.sortName.localeCompare(b.sortName)
+		})
+	}
 
 	function normalizeAppState(state: unknown): TypeAppState {
 		const value = (state ?? {}) as {
@@ -76,6 +139,45 @@
 		}
 		await StartGlobalStats()
 		statsActive = true
+	}
+
+	async function connectNode(nodeKey: string) {
+		connectPending = [...connectPending, nodeKey]
+		connectErrors = { ...connectErrors, [nodeKey]: "" }
+		try {
+			await ConnectNode(nodeKey)
+		} catch (error) {
+			console.error(error)
+			const message = error instanceof Error ? error.message : String(error)
+			connectErrors = { ...connectErrors, [nodeKey]: message || "连接失败" }
+			maybeOpenUdevDialog(message || "")
+		} finally {
+			connectPending = connectPending.filter((key) => key !== nodeKey)
+		}
+	}
+
+	function isConnecting(nodeKey: string) {
+		return connectPending.includes(nodeKey)
+	}
+
+	function maybeOpenUdevDialog(message: string) {
+		if (!message.includes(psurcUdevErrorTag)) return
+		const parts = message.split("\n")
+		if (parts.length >= 2) {
+			udevFixCommand = parts.slice(1).join("\n").trim()
+		} else {
+			udevFixCommand = ""
+		}
+		showUdevDialog = true
+	}
+
+	async function copyUdevCommand() {
+		if (!udevFixCommand) return
+		try {
+			await navigator.clipboard.writeText(udevFixCommand)
+		} catch (error) {
+			console.error(error)
+		}
 	}
 </script>
 
@@ -156,9 +258,22 @@
 		class:flex-col={showChart}
 		class:flex-row={!showChart}
 	>
-		{#each nodes as node}
-			<NodeRenderer {node} {showChart} />
-		{/each}
+		{#if displayCards.length === 0}
+			<div class="mx-2 text-sm text-base-content/60">暂无发现到的 node</div>
+		{:else}
+			{#each displayCards as item (item.nodeKey)}
+				{#if item.kind === "connected"}
+					<NodeRenderer node={item.node} {showChart} />
+				{:else}
+					<DiscoveredNodeCard
+						discovered={item.discovered}
+						connecting={isConnecting(item.discovered.nodeKey)}
+						errorMessage={connectErrors[item.discovered.nodeKey] ?? ""}
+						onConnect={() => connectNode(item.discovered.nodeKey)}
+					/>
+				{/if}
+			{/each}
+		{/if}
 	</div>
 </main>
 <div class={footerStyle}></div>
@@ -168,6 +283,22 @@
 	<div class="text-sm text-base-content/70 select-none">节点数: {nodes.length}</div>
 	<div class="ml-auto text-sm text-base-content/60 select-none">模拟: {appState.Simulating ? "进行中" : "未开始"} | 统计: {statsActive ? "进行中" : "未开始"} | 录制: {recordingActive ? "进行中" : "未开始"}</div>
 </footer>
+
+{#if showUdevDialog}
+	<dialog class="modal modal-open">
+		<div class="modal-box max-w-2xl">
+			<h3 class="font-bold text-lg">USB-HID 权限不足</h3>
+			<p class="py-2 text-sm text-base-content/80">请在终端执行以下命令后重新插拔设备，然后重启应用。</p>
+			{#if udevFixCommand}
+				<textarea class="textarea textarea-bordered w-full h-40 font-mono text-xs" readonly value={udevFixCommand}></textarea>
+			{/if}
+			<div class="modal-action">
+				<button class="btn btn-outline btn-sm" on:click={copyUdevCommand}>复制命令</button>
+				<button class="btn btn-primary btn-sm" on:click={() => (showUdevDialog = false)}>我已知晓</button>
+			</div>
+		</div>
+	</dialog>
+{/if}
 
 <style>
 	:global(html) {

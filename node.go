@@ -119,6 +119,45 @@ var NodeTypeMap = map[uint16]NodeTypeDef{
 			},
 		},
 	},
+	0xDC03: {
+		Code: 0xDC03,
+		Name: "PSU-RC",
+		Metrics: []MetricDef{
+			{Key: "supplyVoltageMin", Name: "Voltage Min", Unit: "V", Digit: 2, Color: "#60a5fa", Kind: MetricSource},
+			{Key: "supplyVoltageAvg", Name: "Voltage Avg", Unit: "V", Digit: 2, Color: "#2563eb", Kind: MetricSource},
+			{Key: "supplyVoltageMax", Name: "Voltage Max", Unit: "V", Digit: 2, Color: "#1d4ed8", Kind: MetricSource},
+			{Key: "controlCurrentMin", Name: "Control Current Min", Unit: "A", Digit: 3, Color: "#facc15", Kind: MetricSource},
+			{Key: "controlCurrentAvg", Name: "Control Current Avg", Unit: "A", Digit: 3, Color: "#eab308", Kind: MetricSource},
+			{Key: "controlCurrentMax", Name: "Control Current Max", Unit: "A", Digit: 3, Color: "#ca8a04", Kind: MetricSource},
+			{Key: "driverCurrentMin", Name: "Driver Current Min", Unit: "A", Digit: 3, Color: "#86efac", Kind: MetricSource},
+			{Key: "driverCurrentAvg", Name: "Driver Current Avg", Unit: "A", Digit: 3, Color: "#22c55e", Kind: MetricSource},
+			{Key: "driverCurrentMax", Name: "Driver Current Max", Unit: "A", Digit: 3, Color: "#15803d", Kind: MetricSource},
+			{Key: "controlPower", Name: "Control Power", Unit: "W", Digit: 2, Color: "#f59e0b", Kind: MetricDerived},
+			{Key: "driverPower", Name: "Driver Power", Unit: "W", Digit: 2, Color: "#ef4444", Kind: MetricDerived},
+			{Key: "totalPower", Name: "Total Power", Unit: "W", Digit: 2, Color: "#a855f7", Kind: MetricDerived},
+		},
+		Stats: []StatDef{newEnergyStatDef("totalPower")},
+		CSVColumns: []CSVColumnDef{
+			{Key: "supplyVoltageAvg", Name: "supply_voltage_rms"},
+			{Key: "controlCurrentAvg", Name: "control_current_rms"},
+			{Key: "driverCurrentAvg", Name: "driver_current_rms"},
+			{Key: "controlPower", Name: "control_power_rms"},
+			{Key: "driverPower", Name: "driver_power_rms"},
+			{Key: "totalPower", Name: "total_power_rms"},
+		},
+		TickToMillis: func(deltaTick uint64) int64 { return int64(deltaTick) },
+		Compute: map[string]ComputeMetricFunc{
+			"controlPower": func(values map[string]float32) float32 {
+				return values["supplyVoltageAvg"] * values["controlCurrentAvg"]
+			},
+			"driverPower": func(values map[string]float32) float32 {
+				return values["supplyVoltageAvg"] * values["driverCurrentAvg"]
+			},
+			"totalPower": func(values map[string]float32) float32 {
+				return values["supplyVoltageAvg"] * (values["controlCurrentAvg"] + values["driverCurrentAvg"])
+			},
+		},
+	},
 }
 
 func newEnergyStatDef(powerKey string) StatDef {
@@ -213,6 +252,7 @@ type Node struct {
 type Nodes map[string]*Node
 
 var nodes Nodes
+var nodesMu sync.RWMutex
 
 func init() {
 	nodes = make(Nodes)
@@ -220,6 +260,64 @@ func init() {
 
 func (ns *Nodes) Clear() {
 	*ns = make(Nodes)
+}
+
+func cloneMetricSeries(metric *MetricSeries) *MetricSeries {
+	if metric == nil {
+		return nil
+	}
+	cloned := *metric
+	cloned.AxisY = append([]float32(nil), metric.AxisY...)
+	return &cloned
+}
+
+func cloneNodeStatValue(stat *NodeStatValue) *NodeStatValue {
+	if stat == nil {
+		return nil
+	}
+	cloned := *stat
+	return &cloned
+}
+
+func cloneNode(node *Node) *Node {
+	if node == nil {
+		return nil
+	}
+	cloned := *node
+	cloned.AxisX = append([]int64(nil), node.AxisX...)
+	cloned.Metrics = make([]*MetricSeries, 0, len(node.Metrics))
+	for _, metric := range node.Metrics {
+		cloned.Metrics = append(cloned.Metrics, cloneMetricSeries(metric))
+	}
+	cloned.Stats = make([]*NodeStatValue, 0, len(node.Stats))
+	for _, stat := range node.Stats {
+		cloned.Stats = append(cloned.Stats, cloneNodeStatValue(stat))
+	}
+	cloned.statRuntime = nil
+	return &cloned
+}
+
+func snapshotNodes() Nodes {
+	nodesMu.RLock()
+	defer nodesMu.RUnlock()
+	snapshot := make(Nodes, len(nodes))
+	for key, node := range nodes {
+		snapshot[key] = cloneNode(node)
+	}
+	return snapshot
+}
+
+func snapshotConnectedNodes() Nodes {
+	nodesMu.RLock()
+	defer nodesMu.RUnlock()
+	snapshot := make(Nodes)
+	for key, node := range nodes {
+		if node == nil || node.Source != "external" && node.Source != "sim" {
+			continue
+		}
+		snapshot[key] = cloneNode(node)
+	}
+	return snapshot
 }
 
 func (n *Node) InitFrom(data ScanData) {
@@ -296,6 +394,13 @@ func (n *Node) NormalizeTimestamp(tick uint64, hostNow int64) int64 {
 		n.FirstTick = tick
 		n.FirstLocalTs = hostNow
 		n.TimeSynced = true
+		return hostNow
+	}
+	// Some transports may deliver stale/out-of-order frames right after connect.
+	// Resync instead of letting unsigned subtraction underflow create huge jumps.
+	if tick < n.FirstTick {
+		n.FirstTick = tick
+		n.FirstLocalTs = hostNow
 		return hostNow
 	}
 	return n.FirstLocalTs + def.TickToMillis(tick-n.FirstTick)
@@ -596,6 +701,8 @@ func (n *Node) ApplyMetricRecords(records map[uint64]map[string]float32, hostNow
 
 func OnScanData(d ScanData) {
 	var macStr string = MacStr(d.Mac)
+	nodesMu.Lock()
+	defer nodesMu.Unlock()
 	if _, ok := nodes[macStr]; !ok {
 		nodes[macStr] = &Node{}
 		nodes[macStr].InitFrom(d)
@@ -612,6 +719,8 @@ func MacStr(mac [6]byte) string {
 }
 
 func HasExternalNodes() bool {
+	nodesMu.RLock()
+	defer nodesMu.RUnlock()
 	for _, node := range nodes {
 		if node != nil && node.Source == "external" {
 			return true

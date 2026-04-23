@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -11,6 +12,12 @@ import (
 type AppState struct {
 	Simulating       bool `json:"simulating"`
 	HasExternalNodes bool `json:"hasExternalNodes"`
+}
+
+type FrontendState struct {
+	Nodes           Nodes                     `json:"nodes"`
+	DiscoveredNodes map[string]DiscoveredNode `json:"discoveredNodes"`
+	AppState        AppState                  `json:"appState"`
 }
 
 // App struct
@@ -44,6 +51,21 @@ func (a *App) MarkFrontendReady() {
 
 	StartExternalAcquisition()
 	a.NewDataNotify()
+}
+
+func (a *App) ConnectNode(nodeKey string) error {
+	if strings.HasPrefix(strings.ToLower(nodeKey), "psurc-") {
+		return psurcManager.ConnectNode(nodeKey)
+	}
+	return cm01Manager.ConnectNode(nodeKey)
+}
+
+func (a *App) GetFrontendState() FrontendState {
+	return FrontendState{
+		Nodes:           snapshotConnectedNodes(),
+		DiscoveredNodes: snapshotAllDiscoveredNodes(),
+		AppState:        a.GetAppState(),
+	}
 }
 
 // Greet returns a greeting for the given name
@@ -100,6 +122,16 @@ func (a *App) StopRecording() {
 }
 
 func (a *App) NewDataNotify() {
-	runtime.EventsEmit(a.ctx, "new-data", nodes)
+	discovered := snapshotAllDiscoveredNodes()
+	runtime.EventsEmit(a.ctx, "new-data", snapshotConnectedNodes())
+	runtime.EventsEmit(a.ctx, "discovered-nodes", discovered)
 	runtime.EventsEmit(a.ctx, "app-state", a.GetAppState())
+}
+
+func snapshotAllDiscoveredNodes() map[string]DiscoveredNode {
+	discovered := cm01Manager.SnapshotDiscoveredNodes()
+	for key, node := range psurcManager.SnapshotDiscoveredNodes() {
+		discovered[key] = node
+	}
+	return discovered
 }

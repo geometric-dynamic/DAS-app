@@ -39,7 +39,7 @@ func (ss *SimStates) Clear() {
 func newMetricState(key string) *SimMetricState {
 	ms := &SimMetricState{}
 	switch key {
-	case "voltage":
+	case "voltage", "supplyVoltageMin", "supplyVoltageAvg", "supplyVoltageMax":
 		ms.k = 5
 		switch rand.Intn(3) {
 		case 0:
@@ -52,7 +52,7 @@ func newMetricState(key string) *SimMetricState {
 			ms.TargetMax = 3.6
 			ms.TargetMin = 2.7
 		}
-	case "current", "controlCurrent", "driverCurrent":
+	case "current", "controlCurrent", "driverCurrent", "controlCurrentMin", "controlCurrentAvg", "controlCurrentMax", "driverCurrentMin", "driverCurrentAvg", "driverCurrentMax":
 		ms.k = 5
 		ms.TargetMax = 33
 		ms.TargetMin = 2
@@ -142,7 +142,9 @@ func newSimNode(tp uint16) (*Node, *SimState) {
 }
 
 func generateSimNodes(count int) {
-	types := []uint16{0xDC01, 0xDC02}
+	types := []uint16{0xDC01, 0xDC02, 0xDC03}
+	nodesMu.Lock()
+	defer nodesMu.Unlock()
 	for range count {
 		node, simState := newSimNode(types[rand.Intn(len(types))])
 		macStr := MacStr(node.Mac)
@@ -174,12 +176,16 @@ func StartSim(count int) {
 
 func StopSim() {
 	simulating = false
+	nodesMu.Lock()
 	nodes.Clear()
+	nodesMu.Unlock()
 	simStates.Clear()
 	app.NewDataNotify()
 }
 
 func updateSimNodes() {
+	nodesMu.Lock()
+	defer nodesMu.Unlock()
 	for _, node := range nodes {
 		if simState, ok := simStates[MacStr(node.Mac)]; ok {
 			simState.Tick += 500

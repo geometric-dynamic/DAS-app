@@ -33,11 +33,20 @@
 	}
 
 	function getYRange(dataMin: number, dataMax: number): [number, number] {
-		const yValues = data[1] ?? []
+		const yRows = data.slice(1)
+		const yValues = yRows[0] ?? []
 		const currentValue = yValues.length > 0 ? yValues[yValues.length - 1] : 0
+		let safeMin = Number.isFinite(dataMin) ? dataMin : currentValue
+		let safeMax = Number.isFinite(dataMax) ? dataMax : currentValue
+		for (const row of yRows) {
+			if (!row || row.length === 0) continue
+			const rowLast = row[row.length - 1]
+			if (Number.isFinite(rowLast)) {
+				safeMin = Math.min(safeMin, rowLast)
+				safeMax = Math.max(safeMax, rowLast)
+			}
+		}
 		const minHalfRange = Math.max(1, Math.abs(currentValue) * 0.1)
-		const safeMin = Number.isFinite(dataMin) ? dataMin : currentValue
-		const safeMax = Number.isFinite(dataMax) ? dataMax : currentValue
 		const targetLower = Math.min(safeMin, currentValue - minHalfRange)
 		const targetUpper = Math.max(safeMax, currentValue + minHalfRange)
 
