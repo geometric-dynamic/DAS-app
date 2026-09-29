@@ -127,12 +127,12 @@
 </script>
 
 <!-- parent must have some CSS size for this div -->
-<div bind:this={container} class="uplot-wrapper p-2"></div>
+<div bind:this={container} class="uplot-wrapper"></div>
 
 <style>
 	.uplot-wrapper {
 		/* ensures it grows/shrinks with parent */
-		width: 95%;
-		height: 60%;
+		width: 100%;
+		height: 100%;
 	}
 </style>
