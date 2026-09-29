@@ -65,6 +65,19 @@ type NodeTypeDef struct {
 }
 
 var NodeTypeMap = map[uint16]NodeTypeDef{
+	0xDC04: {
+		Code: 0xDC04,
+		Name: "PDATX-A",
+		Metrics: []MetricDef{
+			{Key: "voltage", Name: "Input Voltage", Unit: "V", Digit: 2, Color: "#3377ff", Kind: MetricSource},
+			{Key: "current", Name: "Output Current", Unit: "A", Digit: 2, Color: "#d1dc00", Kind: MetricSource},
+		},
+		CSVColumns: []CSVColumnDef{
+			{Key: "voltage", Name: "input_voltage"},
+			{Key: "current", Name: "output_current"},
+		},
+		TickToMillis: func(deltaTick uint64) int64 { return int64(deltaTick) },
+	},
 	0xDC01: {
 		Code: 0xDC01,
 		Name: "CM01",

@@ -180,6 +180,7 @@
 
 <div class="flex gap-1 text-base-content">
 	<div class="flex-0 border-2 rounded-xl border-base-300 bg-base-200">
+		{#if node.TypeCode !== 0xdc04}
 		<div class="w-40 mt-2 flex flex-row gap-1 justify-center">
 			{#each safeLeds as led}
 				{#if led}
@@ -189,6 +190,7 @@
 				{/if}
 			{/each}
 		</div>
+		{/if}
 		<div class="w-40 m-1 flex justify-center">
 			<span class="text-xl font-bold text-center">{node.Name}</span>
 		</div>
@@ -227,6 +229,7 @@
 			</div>
 		{/if}
 
+		{#if node.TypeCode !== 0xdc04}
 		<div class="w-40 m-1 flex justify-center">
 			<div class="flex flex-col text-xs text-base-content/60">
 				<span>{macAddress}</span>
@@ -234,6 +237,7 @@
 				<span>BATT:{node.Battery.toFixed(0)}%</span>
 			</div>
 		</div>
+		{/if}
 	</div>
 	{#if showChart}
 		<div class="flex-1 border-2 rounded-xl border-base-300 bg-base-100">
