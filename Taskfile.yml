@@ -1,0 +1,114 @@
+version: '3'
+
+vars:
+  APP_NAME: DAS-Console
+  BIN_DIR: bin
+  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+  GOOS: '{{.GOOS | default OS}}'
+  ARCH: '{{.ARCH | default ARCH}}'
+
+tasks:
+  build:
+    desc: Build the desktop application
+    cmds:
+      - task: frontend
+      - task: '{{.GOOS}}:build'
+
+  frontend:
+    vars:
+      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if .EXTRA_TAGS}}-tags {{.EXTRA_TAGS}} {{end}}-buildvcs=false{{else}}-tags production{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -ldflags="-w -s"{{end}}'
+    run: once
+    cmds:
+      - go mod tidy
+      - wails3 generate bindings -f '{{.BUILD_FLAGS}}' -ts -i
+      - task: frontend:build
+
+  frontend:build:
+    dir: frontend
+    cmds:
+      - npm ci
+      - npm run {{if eq .DEV "true"}}build:dev{{else}}build{{end}}
+
+  dev:
+    desc: Run with frontend and Go hot reload
+    cmds:
+      - wails3 dev -config build/config.yml -port {{.VITE_PORT}}
+
+  common:dev:frontend:
+    dir: frontend
+    cmds:
+      - npm run dev -- --port {{.VITE_PORT}} --strictPort
+
+  run:
+    cmds:
+      - '{{.BIN_DIR}}/{{.APP_NAME}}{{if eq .GOOS "windows"}}.exe{{end}}'
+
+  icons:
+    run: once
+    cmds:
+      - wails3 generate icons -input build/appicon.png -macfilename build/darwin/icons.icns -windowsfilename build/windows/icon.ico
+
+  linux:build:
+    vars:
+      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if .EXTRA_TAGS}}-tags {{.EXTRA_TAGS}} {{end}}-buildvcs=false{{else}}-tags production{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -ldflags="-w -s"{{end}}'
+    cmds:
+      - go build {{.BUILD_FLAGS}} -o {{.BIN_DIR}}/{{.APP_NAME}} .
+    env:
+      GOOS: linux
+      GOARCH: '{{.ARCH}}'
+      CGO_ENABLED: '1'
+
+  windows:build:
+    vars:
+      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if .EXTRA_TAGS}}-tags {{.EXTRA_TAGS}} {{end}}-buildvcs=false{{else}}-tags production{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -ldflags="-w -s -H windowsgui"{{end}}'
+    deps: [icons]
+    cmds:
+      - defer: '{{if eq OS "windows"}}powershell Remove-Item -ErrorAction SilentlyContinue wails_windows_{{.ARCH}}.syso{{else}}rm -f wails_windows_{{.ARCH}}.syso{{end}}'
+      - wails3 generate syso -arch {{.ARCH}} -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -out wails_windows_{{.ARCH}}.syso
+      - go build {{.BUILD_FLAGS}} -o {{.BIN_DIR}}/{{.APP_NAME}}.exe .
+    env:
+      GOOS: windows
+      GOARCH: '{{.ARCH}}'
+      # HID acquisition requires CGO, including when cross-compiling.
+      CGO_ENABLED: '1'
+
+  darwin:build:
+    vars:
+      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if .EXTRA_TAGS}}-tags {{.EXTRA_TAGS}} {{end}}-buildvcs=false{{else}}-tags production{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -ldflags="-w -s"{{end}}'
+    preconditions:
+      - sh: '[ "{{OS}}" = darwin ]'
+        msg: 'Build macOS on a Mac with Xcode command line tools installed.'
+    deps: [icons]
+    cmds:
+      - go build {{.BUILD_FLAGS}} -o {{.BIN_DIR}}/{{.APP_NAME}} .
+    env:
+      GOOS: darwin
+      GOARCH: '{{.ARCH}}'
+      CGO_ENABLED: '1'
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+      CGO_CFLAGS: '-mmacosx-version-min=12.0'
+      CGO_LDFLAGS: '-mmacosx-version-min=12.0'
+
+  package:
+    desc: Create a Windows installer or macOS app bundle
+    deps: [build]
+    cmds:
+      - task: '{{.GOOS}}:package'
+
+  windows:package:
+    preconditions:
+      - sh: '[ "{{.ARCH}}" = amd64 ] || [ "{{.ARCH}}" = arm64 ]'
+        msg: 'NSIS installers support amd64 and arm64.'
+    dir: build/windows/nsis
+    cmds:
+      - wails3 generate webview2bootstrapper -dir .
+      - makensis -DARG_WAILS_{{if eq .ARCH "amd64"}}AMD64{{else}}ARM64{{end}}_BINARY="{{.ROOT_DIR}}/bin/{{.APP_NAME}}.exe" project.nsi
+
+  darwin:package:
+    cmds:
+      - rm -rf {{.BIN_DIR}}/{{.APP_NAME}}.app
+      - mkdir -p {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources
+      - cp {{.BIN_DIR}}/{{.APP_NAME}} {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS/
+      - cp build/darwin/Info.plist {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/
+      - cp build/darwin/icons.icns {{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/
+      - codesign --force --deep --sign - {{.BIN_DIR}}/{{.APP_NAME}}.app

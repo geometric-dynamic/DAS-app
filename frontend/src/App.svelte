@@ -2,8 +2,8 @@
 	import NodeRenderer from "./NodeRenderer.svelte"
 	import DiscoveredNodeCard from "./components/node/DiscoveredNodeCard.svelte"
 	import type { TypeAppState, TypeDiscoveredNode, TypeFrontendState, TypeNode } from "./Node"
-	import { ConnectNode, GetFrontendState, MarkFrontendReady, StartGlobalStats, StartRecording, StartSim, StopGlobalStats, StopRecording, StopSim } from "../wailsjs/go/main/App"
-	import { EventsOn } from '../wailsjs/runtime';
+	import { ConnectNode, GetFrontendState, MarkFrontendReady, StartGlobalStats, StartRecording, StartSim, StopGlobalStats, StopRecording, StopSim } from "../bindings/wails-demo/app"
+	import { Events } from '@wailsio/runtime';
 	import { onMount } from "svelte"
 
 	let showChart = false
@@ -31,19 +31,25 @@
 		GetFrontendState().then((state) => {
 			applyFrontendState(state)
 		})
-		EventsOn("new-data", (data) => {
-			applyNodes(data)
+		const offNodes = Events.On("new-data", (data) => {
+			applyNodes(data.data)
 		});
-		EventsOn("discovered-nodes", (data) => {
-			applyDiscoveredNodes(data)
+		const offDiscovered = Events.On("discovered-nodes", (data) => {
+			applyDiscoveredNodes(data.data)
 		})
-		EventsOn("app-state", (state) => {
-			appState = normalizeAppState(state)
+		const offState = Events.On("app-state", (state) => {
+			appState = normalizeAppState(state.data)
 		})
-		EventsOn("recording-state", (active) => {
-			recordingActive = Boolean(active)
+		const offRecording = Events.On("recording-state", (active) => {
+			recordingActive = Boolean(active.data)
 		})
 		MarkFrontendReady()
+		return () => {
+			offNodes()
+			offDiscovered()
+			offState()
+			offRecording()
+		}
 	})
 
 	function applyNodes(data: unknown) {
@@ -57,9 +63,9 @@
 
 	function applyFrontendState(state: unknown) {
 		const value = (state ?? {}) as TypeFrontendState
-		applyNodes(value.Nodes)
-		applyDiscoveredNodes(value.DiscoveredNodes)
-		appState = normalizeAppState(value.AppState)
+		applyNodes(value.nodes)
+		applyDiscoveredNodes(value.discoveredNodes)
+		appState = normalizeAppState(value.appState)
 	}
 
 	function getNodeKey(node: TypeNode): string {
