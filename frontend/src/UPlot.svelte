@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from "svelte"
+	import { onMount } from "svelte"
 	import uPlot from "uplot"
 	import "uplot/dist/uPlot.min.css"
 
@@ -30,6 +30,7 @@
 			data.map((row) => new Float64Array(row)),
 			container
 		)
+		updateSize()
 	}
 
 	function getYRange(dataMin: number, dataMax: number): [number, number] {
@@ -104,7 +105,10 @@
 	function updateSize() {
 		if (!chart) return
 		const rect = container.getBoundingClientRect()
-		chart.setSize({ width: rect.width, height: rect.height })
+		chart.root.style.width = `${rect.width}px`
+		// uPlot's height excludes the legend, which can wrap on narrow cards.
+		const legendHeight = chart.root.querySelector(".u-legend")?.getBoundingClientRect().height ?? 0
+		chart.setSize({ width: rect.width, height: Math.max(1, rect.height - legendHeight) })
 	}
 
 	onMount(() => {
@@ -113,6 +117,8 @@
 		// watch for parent resize
 		resizeObserver = new ResizeObserver(updateSize)
 		resizeObserver.observe(container)
+		const legend = chart.root.querySelector(".u-legend")
+		if (legend) resizeObserver.observe(legend)
 
 		return () => {
 			resizeObserver.disconnect()
