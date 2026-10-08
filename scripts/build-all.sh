@@ -97,9 +97,13 @@ build_target() {
 
   log "Building target: ${target}"
 
-  local build_cmd=(wails build -platform "$target" -o "$RAW_OUTPUT_BASENAME" -clean -nocolour)
+  local build_cmd=(wails3 build "GOOS=$os" "ARCH=$arch")
   if [ "$nsis" -eq 1 ] && [ "$os" = "windows" ]; then
-    build_cmd+=( -nsis )
+    build_cmd=(wails3 package "GOOS=$os" "ARCH=$arch")
+  fi
+
+  if [ "$os" = "darwin" ]; then
+    build_cmd=(wails3 package "GOOS=$os" "ARCH=$arch")
   fi
 
   if ! "${build_cmd[@]}"; then
@@ -111,36 +115,39 @@ build_target() {
 
   case "$os" in
     windows)
-      if copy_if_exists "build/bin/${RAW_OUTPUT_BASENAME}.exe" "${DIST_DIR}/${normalized}.exe"; then
+      if copy_if_exists "bin/${RAW_OUTPUT_BASENAME}.exe" "${DIST_DIR}/${normalized}.exe"; then
         log "Created ${DIST_DIR}/${normalized}.exe"
         copied_any=1
-      elif copy_if_exists "build/bin/${RAW_OUTPUT_BASENAME}" "${DIST_DIR}/${normalized}.exe"; then
+      elif copy_if_exists "bin/${RAW_OUTPUT_BASENAME}" "${DIST_DIR}/${normalized}.exe"; then
         log "Created ${DIST_DIR}/${normalized}.exe"
         copied_any=1
-      elif is_windows_binary "build/bin/${RAW_OUTPUT_BASENAME}"; then
-        cp "build/bin/${RAW_OUTPUT_BASENAME}" "${DIST_DIR}/${normalized}.exe"
+      elif is_windows_binary "bin/${RAW_OUTPUT_BASENAME}"; then
+        cp "bin/${RAW_OUTPUT_BASENAME}" "${DIST_DIR}/${normalized}.exe"
         log "Created ${DIST_DIR}/${normalized}.exe"
         copied_any=1
       fi
       if [ "$nsis" -eq 1 ]; then
-        local installer="build/bin/${RAW_OUTPUT_BASENAME}-${arch}-installer.exe"
+        local installer="bin/${RAW_OUTPUT_BASENAME}-${arch}-installer.exe"
         if copy_if_exists "$installer" "${DIST_DIR}/${normalized}_installer.exe"; then
           log "Created ${DIST_DIR}/${normalized}_installer.exe"
           copied_any=1
+        else
+          warn "Missing expected installer: ${installer}"
+          return 1
         fi
       fi
       ;;
     darwin)
-      if copy_if_exists "build/bin/${RAW_OUTPUT_BASENAME}.app" "${DIST_DIR}/${normalized}.app"; then
+      if copy_if_exists "bin/${RAW_OUTPUT_BASENAME}.app" "${DIST_DIR}/${normalized}.app"; then
         log "Created ${DIST_DIR}/${normalized}.app"
         copied_any=1
-      elif copy_if_exists "build/bin/${RAW_OUTPUT_BASENAME}" "${DIST_DIR}/${normalized}"; then
+      elif copy_if_exists "bin/${RAW_OUTPUT_BASENAME}" "${DIST_DIR}/${normalized}"; then
         log "Created ${DIST_DIR}/${normalized}"
         copied_any=1
       fi
       ;;
     *)
-      if copy_if_exists "build/bin/${RAW_OUTPUT_BASENAME}" "${DIST_DIR}/${normalized}"; then
+      if copy_if_exists "bin/${RAW_OUTPUT_BASENAME}" "${DIST_DIR}/${normalized}"; then
         log "Created ${DIST_DIR}/${normalized}"
         copied_any=1
       fi
@@ -148,7 +155,7 @@ build_target() {
   esac
 
   if [ "$copied_any" -eq 0 ]; then
-    warn "Build succeeded for ${target}, but no known output artifact was found in build/bin/."
+    warn "Build succeeded for ${target}, but no known output artifact was found in bin/."
     return 1
   fi
 
@@ -186,7 +193,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 require_cmd git
-require_cmd wails
+require_cmd wails3
 
 version="$(detect_version)"
 

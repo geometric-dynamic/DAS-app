@@ -1,12 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"sync"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type AppState struct {
@@ -22,7 +21,7 @@ type FrontendState struct {
 
 // App struct
 type App struct {
-	ctx           context.Context
+	wails         *application.App
 	frontendReady bool
 	readyMu       sync.Mutex
 }
@@ -30,12 +29,6 @@ type App struct {
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{}
-}
-
-// startup is called when the app starts. The context is saved
-// so we can call the runtime methods
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
 }
 
 func (a *App) MarkFrontendReady() {
@@ -112,20 +105,20 @@ func (a *App) StartRecording() error {
 	if err := recorderManager.Start(); err != nil {
 		return err
 	}
-	runtime.EventsEmit(a.ctx, "recording-state", true)
+	a.wails.Event.Emit("recording-state", true)
 	return nil
 }
 
 func (a *App) StopRecording() {
 	recorderManager.Stop()
-	runtime.EventsEmit(a.ctx, "recording-state", false)
+	a.wails.Event.Emit("recording-state", false)
 }
 
 func (a *App) NewDataNotify() {
 	discovered := snapshotAllDiscoveredNodes()
-	runtime.EventsEmit(a.ctx, "new-data", snapshotConnectedNodes())
-	runtime.EventsEmit(a.ctx, "discovered-nodes", discovered)
-	runtime.EventsEmit(a.ctx, "app-state", a.GetAppState())
+	a.wails.Event.Emit("new-data", snapshotConnectedNodes())
+	a.wails.Event.Emit("discovered-nodes", discovered)
+	a.wails.Event.Emit("app-state", a.GetAppState())
 }
 
 func snapshotAllDiscoveredNodes() map[string]DiscoveredNode {
