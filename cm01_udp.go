@@ -403,20 +403,17 @@ func (m *CM01Manager) heartbeatLoop() {
 
 func (m *CM01Manager) cleanupOffline() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	now := time.Now()
 	changed := false
-	for ip, session := range m.sessions {
+	for _, session := range m.sessions {
 		if now.Sub(session.lastSeen) < cm01OfflineTimeout {
 			continue
 		}
-		delete(m.sessions, ip)
-		nodesMu.Lock()
-		delete(nodes, session.nodeKey)
-		nodesMu.Unlock()
+		m.markOfflineLocked(session)
 		changed = true
 	}
-	if changed {
+	m.mu.Unlock()
+	if changed && app != nil {
 		app.NewDataNotify()
 	}
 }
