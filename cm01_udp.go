@@ -18,6 +18,7 @@ const (
 	cm01HeartbeatPeriod = time.Second
 	cm01OfflineTimeout  = 3 * time.Second
 	cm01TypeCode        = 0xDC01
+	pdatxTypeCode       = 0xDC04
 )
 
 type cm01HeartbeatPacket struct {
@@ -39,6 +40,7 @@ type cm01DataBatchPacket struct {
 
 type cm01Session struct {
 	ip           string
+	typeCode     uint16
 	mac          [6]byte
 	nodeKey      string
 	lastSeen     time.Time
@@ -151,12 +153,18 @@ func (m *CM01Manager) handlePacket(remote *net.UDPAddr, payload []byte) {
 			fmt.Printf("%s esp_heartbeat parse failed: remote=%s err=%v payload=%s\n", cm01DebugLogPrefix, remote.String(), err, string(payload))
 			return
 		}
-		if hb.Dev != "DAS_NODE_CM01" {
+		var typeCode uint16
+		switch hb.Dev {
+		case "DAS_NODE_CM01":
+			typeCode = cm01TypeCode
+		case "PDATX_A":
+			typeCode = pdatxTypeCode
+		default:
 			fmt.Printf("%s esp_heartbeat ignored: remote=%s dev=%s\n", cm01DebugLogPrefix, remote.String(), hb.Dev)
 			return
 		}
-		session, created := m.touchSession(remote.IP.String())
-		fmt.Printf("%s esp_heartbeat accepted: remoteIP=%s created=%v nodeKey=%s name=%s\n", cm01DebugLogPrefix, remote.IP.String(), created, session.nodeKey, "CM01-"+strings.ReplaceAll(session.ip, ".", "-"))
+		session, created := m.touchSession(remote.IP.String(), typeCode)
+		fmt.Printf("%s esp_heartbeat accepted: remoteIP=%s created=%v nodeKey=%s name=%s\n", cm01DebugLogPrefix, remote.IP.String(), created, session.nodeKey, session.name())
 		if created && app != nil {
 			fmt.Printf("%s esp_heartbeat notify frontend: remoteIP=%s nodeKey=%s\n", cm01DebugLogPrefix, remote.IP.String(), session.nodeKey)
 			app.NewDataNotify()
@@ -174,20 +182,28 @@ func (m *CM01Manager) handlePacket(remote *net.UDPAddr, payload []byte) {
 	}
 }
 
-func (m *CM01Manager) touchSession(ip string) (*cm01Session, bool) {
+func (s *cm01Session) name() string {
+	return NodeTypeMap[s.typeCode].Name + "-" + strings.ReplaceAll(s.ip, ".", "-")
+}
+
+func (m *CM01Manager) touchSession(ip string, typeCode uint16) (*cm01Session, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	session, ok := m.sessions[ip]
 	created := false
+	if ok && session.typeCode != typeCode {
+		m.markOfflineLocked(session)
+		ok = false
+	}
 	if !ok {
-		mac := pseudoMacFromIP(ip)
+		mac := pseudoMacFromIP(ip, typeCode)
 		nodeKey := MacStr(mac)
-		session = &cm01Session{ip: ip, mac: mac, nodeKey: nodeKey}
+		session = &cm01Session{ip: ip, typeCode: typeCode, mac: mac, nodeKey: nodeKey}
 		m.sessions[ip] = session
 		created = true
 	}
 	session.lastSeen = time.Now()
-	name := "CM01-" + strings.ReplaceAll(session.ip, ".", "-")
+	name := session.name()
 	fmt.Printf("%s touchSession: ip=%s created=%v nodeKey=%s name=%s sessions=%d lastSeen=%d\n", cm01DebugLogPrefix, ip, created, session.nodeKey, name, len(m.sessions), session.lastSeen.UnixMilli())
 	return session, created
 }
@@ -200,9 +216,9 @@ func (m *CM01Manager) SnapshotDiscoveredNodes() map[string]DiscoveredNode {
 	for _, session := range m.sessions {
 		result[session.nodeKey] = DiscoveredNode{
 			NodeKey:   session.nodeKey,
-			Name:      "CM01-" + strings.ReplaceAll(session.ip, ".", "-"),
-			TypeCode:  cm01TypeCode,
-			TypeName:  NodeTypeMap[cm01TypeCode].Name,
+			Name:      session.name(),
+			TypeCode:  session.typeCode,
+			TypeName:  NodeTypeMap[session.typeCode].Name,
 			IP:        session.ip,
 			Mac:       session.mac,
 			Online:    now.Sub(session.lastSeen) < cm01OfflineTimeout,
@@ -236,6 +252,7 @@ func (m *CM01Manager) ConnectNode(nodeKey string) error {
 	initialSeen := session.lastSeen
 	ip := session.ip
 	mac := session.mac
+	typeCode := session.typeCode
 	m.mu.Unlock()
 
 	if conn == nil {
@@ -275,10 +292,9 @@ func (m *CM01Manager) ConnectNode(nodeKey string) error {
 		nodesMu.Lock()
 		if _, exists := nodes[nodeKey]; !exists {
 			node := &Node{}
-			node.InitFrom(ScanData{Type: cm01TypeCode, Tick: 0, Mac: mac})
+			node.InitFrom(ScanData{Type: typeCode, Tick: 0, Mac: mac})
 			node.Source = "external"
-			node.Name = "CM01-" + strings.ReplaceAll(ip, ".", "-")
-			node.TypeName = NodeTypeMap[cm01TypeCode].Name
+			node.Name = candidate.name()
 			nodes[nodeKey] = node
 		}
 		nodesMu.Unlock()
@@ -308,10 +324,19 @@ func (m *CM01Manager) forceOfflineByNodeKey(nodeKey string) {
 }
 
 func (m *CM01Manager) handleBatch(ip string, batch cm01DataBatchPacket) {
-	session, _ := m.touchSession(ip)
-	if session == nil || !session.connected {
+	m.mu.Lock()
+	session := m.sessions[ip]
+	if session == nil {
+		m.mu.Unlock()
 		return
 	}
+	session.lastSeen = time.Now()
+	if !session.connected {
+		m.mu.Unlock()
+		return
+	}
+	nodeKey, typeCode := session.nodeKey, session.typeCode
+	m.mu.Unlock()
 	recordsByTS := make(map[uint64]map[string]float32)
 	var latestBattery float32
 	var hasBattery bool
@@ -321,18 +346,18 @@ func (m *CM01Manager) handleBatch(ip string, batch cm01DataBatchPacket) {
 			frame = make(map[string]float32)
 			recordsByTS[record.TS] = frame
 		}
-		switch record.Channel {
-		case "ADS_VOLTAGE":
+		switch {
+		case typeCode == cm01TypeCode && record.Channel == "ADS_VOLTAGE", typeCode == pdatxTypeCode && record.Channel == "INPUT_VOLTAGE":
 			frame["voltage"] = record.Current
-		case "ADS_CURRENT":
+		case typeCode == cm01TypeCode && record.Channel == "ADS_CURRENT", typeCode == pdatxTypeCode && record.Channel == "OUTPUT_CURRENT":
 			frame["current"] = record.Current
-		case "BATT_ADC":
+		case typeCode == cm01TypeCode && record.Channel == "BATT_ADC":
 			latestBattery = record.Current
 			hasBattery = true
 		}
 	}
 	nodesMu.RLock()
-	node := nodes[session.nodeKey]
+	node := nodes[nodeKey]
 	nodesMu.RUnlock()
 	if node == nil {
 		return
@@ -359,7 +384,7 @@ func (m *CM01Manager) handleBatch(ip string, batch cm01DataBatchPacket) {
 		node.Battery = batteryPercentFromVoltage(latestBattery)
 	}
 	node.RSSI = 0
-	if updated || hasBattery {
+	if (updated || hasBattery) && app != nil {
 		app.NewDataNotify()
 	}
 }
@@ -420,16 +445,16 @@ func (m *CM01Manager) sendHeartbeats() {
 	}
 }
 
-func pseudoMacFromIP(ip string) [6]byte {
+func pseudoMacFromIP(ip string, typeCode uint16) [6]byte {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
-		return [6]byte{0xDC, 0x01, 0, 0, 0, 0}
+		return [6]byte{0xDC, byte(typeCode), 0, 0, 0, 0}
 	}
 	v4 := parsed.To4()
 	if v4 == nil {
-		return [6]byte{0xDC, 0x01, 0, 0, 0, 1}
+		return [6]byte{0xDC, byte(typeCode), 0, 0, 0, 1}
 	}
-	return [6]byte{0xDC, 0x01, v4[0], v4[1], v4[2], v4[3]}
+	return [6]byte{0xDC, byte(typeCode), v4[0], v4[1], v4[2], v4[3]}
 }
 
 func batteryPercentFromVoltage(v float32) int {
