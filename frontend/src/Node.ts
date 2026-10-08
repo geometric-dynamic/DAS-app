@@ -48,8 +48,4 @@ export interface TypeAppState {
 	HasExternalNodes: boolean
 }
 
-export interface TypeFrontendState {
-	Nodes: Record<string, TypeNode>
-	DiscoveredNodes: Record<string, TypeDiscoveredNode>
-	AppState: TypeAppState
-}
+export type { FrontendState as TypeFrontendState } from "../bindings/wails-demo/models"

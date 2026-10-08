@@ -108,7 +108,7 @@ func (m *PSURCManager) scanDevices() {
 	}
 
 	changed := false
-	removedKeys := make([]string, 0)
+	removedDevices := make([]*hid.Device, 0)
 
 	m.mu.Lock()
 	for key, info := range present {
@@ -136,21 +136,18 @@ func (m *PSURCManager) scanDevices() {
 			continue
 		}
 		if session.device != nil {
-			_ = session.device.Close()
-			session.device = nil
+			removedDevices = append(removedDevices, session.device)
 		}
 		delete(m.sessions, key)
-		removedKeys = append(removedKeys, key)
+		nodesMu.Lock()
+		delete(nodes, key)
+		nodesMu.Unlock()
 		changed = true
 	}
 	m.mu.Unlock()
 
-	if len(removedKeys) > 0 {
-		nodesMu.Lock()
-		for _, key := range removedKeys {
-			delete(nodes, key)
-		}
-		nodesMu.Unlock()
+	for _, device := range removedDevices {
+		_ = device.Close()
 	}
 
 	if changed && app != nil {
@@ -212,6 +209,19 @@ func (m *PSURCManager) ConnectNode(nodeKey string) error {
 		StopSim()
 	}
 
+	m.mu.Lock()
+	current, ok := m.sessions[nodeKey]
+	if !ok || current != session {
+		m.mu.Unlock()
+		_ = device.Close()
+		return errors.New("node offline")
+	}
+	if session.connected {
+		m.mu.Unlock()
+		_ = device.Close()
+		return nil
+	}
+
 	nodesMu.Lock()
 	if _, exists := nodes[nodeKey]; !exists {
 		node := &Node{}
@@ -224,13 +234,6 @@ func (m *PSURCManager) ConnectNode(nodeKey string) error {
 	}
 	nodesMu.Unlock()
 
-	m.mu.Lock()
-	session, ok = m.sessions[nodeKey]
-	if !ok {
-		m.mu.Unlock()
-		_ = device.Close()
-		return errors.New("node offline")
-	}
 	session.connected = true
 	session.device = device
 	m.mu.Unlock()
@@ -247,11 +250,7 @@ func (m *PSURCManager) ConnectNode(nodeKey string) error {
 func (m *PSURCManager) readLoop(nodeKey string, device *hid.Device) {
 	defer func() {
 		_ = device.Close()
-		m.markDisconnected(nodeKey)
-		nodesMu.Lock()
-		delete(nodes, nodeKey)
-		nodesMu.Unlock()
-		if app != nil {
+		if m.markDisconnected(nodeKey, device) && app != nil {
 			app.NewDataNotify()
 		}
 	}()
@@ -306,13 +305,19 @@ func (m *PSURCManager) readLoop(nodeKey string, device *hid.Device) {
 	}
 }
 
-func (m *PSURCManager) markDisconnected(nodeKey string) {
+func (m *PSURCManager) markDisconnected(nodeKey string, device *hid.Device) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if session, ok := m.sessions[nodeKey]; ok {
-		session.connected = false
-		session.device = nil
+	session, ok := m.sessions[nodeKey]
+	if !ok || session.device != device {
+		return false
 	}
+	session.connected = false
+	session.device = nil
+	nodesMu.Lock()
+	delete(nodes, nodeKey)
+	nodesMu.Unlock()
+	return true
 }
 
 func parsePSURCReport(report []byte) (*psurcFrame, error) {

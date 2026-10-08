@@ -4,3 +4,8 @@ frontend/dist
 *.md5
 dist
 wails-demo
+
+bin/
+.task/
+*.syso
+build/windows/nsis/MicrosoftEdgeWebview2Setup.exe

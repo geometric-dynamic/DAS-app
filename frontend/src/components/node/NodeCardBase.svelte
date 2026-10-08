@@ -178,68 +178,63 @@
 	}
 </script>
 
-<div class="flex gap-1 text-base-content">
-	<div class="flex-0 border-2 rounded-xl border-base-300 bg-base-200">
-		<div class="w-40 mt-2 flex flex-row gap-1 justify-center">
-			{#each safeLeds as led}
-				{#if led}
-					<div class="w-3 h-3 m-1 rounded-full bg-base-content"></div>
-				{:else}
-					<div class="w-3 h-3 m-1 rounded-full border-2 border-base-300"></div>
-				{/if}
-			{/each}
+<article class={`flex min-w-0 w-full flex-col gap-4 text-base-content ${showChart ? "sm:flex-row" : ""}`}>
+	<div class={`flex min-w-0 w-full flex-col gap-4 rounded-xl border border-base-300 bg-base-200 p-4 ${showChart ? "sm:w-60 sm:shrink-0" : ""}`}>
+		<div class="min-w-0">
+			{#if node.TypeCode !== 0xdc04}
+				<div class="mb-3 flex gap-2" aria-label="节点 LED 状态">
+					{#each safeLeds as led}
+						<div class="h-2.5 w-2.5 rounded-full" class:bg-base-content={led} class:border={!led} class:border-base-300={!led}></div>
+					{/each}
+				</div>
+			{/if}
+			<h2 class="break-words text-lg font-bold leading-tight">{node.Name}</h2>
+			<p class="mt-1 text-sm text-base-content/70">{node.TypeName}</p>
 		</div>
-		<div class="w-40 m-1 flex justify-center">
-			<span class="text-xl font-bold text-center">{node.Name}</span>
-		</div>
-		<div class="w-40 m-1 flex justify-center text-sm text-base-content/70">
-			<span>{node.TypeName}</span>
-		</div>
-		<div class="w-40 m-1 px-2 flex flex-col gap-1">
+
+		<div class="flex flex-col gap-2">
 			{#each safeMetricGroups as group, index}
 				{@const metric = groupCurrentMetric(group)}
 				{@const isSelected = selectedGroupIndex === index}
 				<button
-					class="flex items-center justify-between rounded-md border border-base-300 bg-base-100 px-2 py-1 text-left text-base-content transition-colors"
+					class="flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-left text-sm text-base-content transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
 					class:bg-base-200={isSelected}
+					aria-pressed={isSelected}
 					on:click={() => selectGroup(index)}
 					style:border-color={isSelected && metric ? metric.Color : undefined}
-					style:box-shadow={isSelected && metric ? `0 0 0 1px ${metric.Color} inset` : undefined}
 				>
-					{#if isSingleMetric}
-						<span class="w-full text-center font-bold">{metric ? `${metric.CurrentValue.toFixed(metric.Digit)} ${metric.Unit}` : "--"}</span>
-					{:else}
-						<span style="color: {metric?.Color ?? "inherit"}">{group.name}</span>
-						<span class="font-bold">{metric ? `${metric.CurrentValue.toFixed(metric.Digit)} ${metric.Unit}` : "--"}</span>
-					{/if}
+					<span class="min-w-0 break-words" style:color={metric?.Color}>{group.name}</span>
+					<span class="shrink-0 font-bold tabular-nums">{metric ? `${metric.CurrentValue.toFixed(metric.Digit)} ${metric.Unit}` : "--"}</span>
 				</button>
 			{/each}
 		</div>
 
 		{#if safeStats.length > 0}
-			<div class="w-40 m-1 px-2 flex flex-col gap-1">
+			<div class="border-t border-base-300 pt-3">
 				{#each safeStats as stat}
-					<div class="rounded-md border border-base-300 bg-base-100 px-2 py-1 text-sm flex justify-between">
+					<div class="flex justify-between gap-2 text-sm">
 						<span class="text-base-content/70">{stat.Name}</span>
-						<span class="font-bold">{stat.Value.toFixed(stat.Digit)} {stat.Unit}</span>
+						<span class="font-bold tabular-nums">{stat.Value.toFixed(stat.Digit)} {stat.Unit}</span>
 					</div>
 				{/each}
 			</div>
 		{/if}
 
-		<div class="w-40 m-1 flex justify-center">
-			<div class="flex flex-col text-xs text-base-content/60">
-				<span>{macAddress}</span>
-				<span>RSSI:{node.RSSI.toFixed(0)}dB</span>
-				<span>BATT:{node.Battery.toFixed(0)}%</span>
+		{#if node.TypeCode !== 0xdc04}
+			<div class="mt-auto border-t border-base-300 pt-3 text-xs text-base-content/70">
+				<div class="break-all font-mono">{macAddress}</div>
+				<div class="mt-1 flex flex-wrap gap-x-3 tabular-nums">
+					<span>RSSI {node.RSSI.toFixed(0)} dB</span>
+					<span>电池 {node.Battery.toFixed(0)}%</span>
+				</div>
 			</div>
-		</div>
+		{/if}
 	</div>
 	{#if showChart}
-		<div class="flex-1 border-2 rounded-xl border-base-300 bg-base-100">
+		<div class="h-72 min-w-0 flex-1 overflow-hidden rounded-xl border border-base-300 bg-base-200 p-3">
 			{#key chartKey}
 				<UPlot {series} {data} />
 			{/key}
 		</div>
 	{/if}
-</div>
+</article>

@@ -1,47 +1,41 @@
 <script lang="ts">
 	import type { TypeDiscoveredNode } from "../../Node"
 
-	export let discovered: TypeDiscoveredNode
-	export let connecting = false
+export let discovered: TypeDiscoveredNode
+export let connecting = false
 export let errorMessage = ""
-	export let onConnect: () => void = () => {}
+export let onConnect: () => void = () => {}
 </script>
 
-<div class="flex gap-1 text-base-content">
-	<div class="flex-0 border-2 rounded-xl border-base-300 bg-base-200">
-		<div class="w-40 mt-2 flex flex-row gap-1 justify-center">
-			{#each Array(4) as _}
-				<div class="w-3 h-3 m-1 rounded-full border-2 border-base-300"></div>
-			{/each}
-		</div>
-		<div class="w-40 m-1 flex justify-center px-2">
-			<span class="text-xl font-bold text-center break-all">{discovered.name}</span>
-		</div>
-		<div class="w-40 m-1 flex justify-center text-sm text-base-content/70 px-2 text-center">
-			<span>{discovered.typeName}</span>
-		</div>
-		<div class="w-40 m-1 px-2 flex flex-col gap-1 text-sm text-base-content/70">
-			<div class="rounded-md border border-base-300 bg-base-100 px-2 py-1 break-all">{discovered.ip}</div>
-			<div class="rounded-md border border-base-300 bg-base-100 px-2 py-1 break-all">{discovered.nodeKey}</div>
-		</div>
-		<div class="w-40 m-1 px-2 py-2">
-			<button class="btn btn-primary btn-sm w-full" disabled={connecting || discovered.connected} on:click={onConnect}>
-				{#if connecting}
-					连接中
-				{:else if discovered.connected}
-					已连接
-				{:else}
-					连接
-				{/if}
-			</button>
-			{#if errorMessage}
-				<div class="mt-1 text-[11px] text-error break-all">{errorMessage}</div>
-			{/if}
-		</div>
-		<div class="w-40 m-1 flex justify-center">
-			<div class="flex flex-col text-xs text-base-content/60">
-				<span>{(discovered.mac ?? []).map((b) => b.toString(16).padStart(2, "0")).join(":").toUpperCase()}</span>
+<article class="flex min-w-0 w-full flex-col gap-4 rounded-xl border border-base-300 bg-base-200 p-4 text-base-content">
+	<div class="min-w-0">
+		{#if discovered.typeCode !== 0xdc04}
+			<div class="mb-3 flex gap-2" aria-hidden="true">
+				{#each Array(4) as _}
+					<div class="h-2.5 w-2.5 rounded-full border border-base-300"></div>
+				{/each}
 			</div>
-		</div>
+		{/if}
+		<h2 class="break-words text-lg font-bold leading-tight">{discovered.name}</h2>
+		<p class="mt-1 text-sm text-base-content/70">{discovered.typeName}</p>
 	</div>
-</div>
+	<div class="min-w-0 text-sm text-base-content/70">
+		<div class="break-all">{discovered.ip}</div>
+		{#if discovered.typeCode !== 0xdc04}
+			<div class="mt-1 break-all font-mono text-xs">{discovered.nodeKey}</div>
+		{/if}
+	</div>
+	<div class="mt-auto">
+		<button class="btn btn-primary min-h-11 w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info" disabled={connecting || discovered.connected} on:click={onConnect}>
+			{#if connecting}连接中{:else if discovered.connected}已连接{:else}连接{/if}
+		</button>
+		{#if errorMessage}
+			<div class="mt-2 break-words text-xs text-error" role="alert">{errorMessage}</div>
+		{/if}
+	</div>
+	{#if discovered.typeCode !== 0xdc04}
+		<div class="border-t border-base-300 pt-3 font-mono text-xs text-base-content/70 break-all">
+			{(discovered.mac ?? []).map((b) => b.toString(16).padStart(2, "0")).join(":").toUpperCase()}
+		</div>
+	{/if}
+</article>

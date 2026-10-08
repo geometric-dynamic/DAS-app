@@ -2,16 +2,14 @@
 	import NodeRenderer from "./NodeRenderer.svelte"
 	import DiscoveredNodeCard from "./components/node/DiscoveredNodeCard.svelte"
 	import type { TypeAppState, TypeDiscoveredNode, TypeFrontendState, TypeNode } from "./Node"
-	import { ConnectNode, GetFrontendState, MarkFrontendReady, StartGlobalStats, StartRecording, StartSim, StopGlobalStats, StopRecording, StopSim } from "../wailsjs/go/main/App"
-	import { EventsOn } from '../wailsjs/runtime';
+	import { ConnectNode, GetFrontendState, MarkFrontendReady, StartGlobalStats, StartRecording, StartSim, StopGlobalStats, StopRecording, StopSim } from "../bindings/wails-demo/app"
+	import { Events } from '@wailsio/runtime';
 	import { onMount } from "svelte"
 
 	let showChart = false
 	let statsActive = false
 	let recordingActive = false
 	let appState: TypeAppState = { Simulating: false, HasExternalNodes: false }
-	const headerStyle = "top-0 left-0 right-0 h-14"
-	const footerStyle = "bottom-0 left-0 right-0 h-10"
 
 	let nodes: TypeNode[] = []
 	let discoveredNodes: TypeDiscoveredNode[] = []
@@ -33,19 +31,25 @@
 		GetFrontendState().then((state) => {
 			applyFrontendState(state)
 		})
-		EventsOn("new-data", (data) => {
-			applyNodes(data)
+		const offNodes = Events.On("new-data", (data) => {
+			applyNodes(data.data)
 		});
-		EventsOn("discovered-nodes", (data) => {
-			applyDiscoveredNodes(data)
+		const offDiscovered = Events.On("discovered-nodes", (data) => {
+			applyDiscoveredNodes(data.data)
 		})
-		EventsOn("app-state", (state) => {
-			appState = normalizeAppState(state)
+		const offState = Events.On("app-state", (state) => {
+			appState = normalizeAppState(state.data)
 		})
-		EventsOn("recording-state", (active) => {
-			recordingActive = Boolean(active)
+		const offRecording = Events.On("recording-state", (active) => {
+			recordingActive = Boolean(active.data)
 		})
 		MarkFrontendReady()
+		return () => {
+			offNodes()
+			offDiscovered()
+			offState()
+			offRecording()
+		}
 	})
 
 	function applyNodes(data: unknown) {
@@ -59,9 +63,9 @@
 
 	function applyFrontendState(state: unknown) {
 		const value = (state ?? {}) as TypeFrontendState
-		applyNodes(value.Nodes)
-		applyDiscoveredNodes(value.DiscoveredNodes)
-		appState = normalizeAppState(value.AppState)
+		applyNodes(value.nodes)
+		applyDiscoveredNodes(value.discoveredNodes)
+		appState = normalizeAppState(value.appState)
 	}
 
 	function getNodeKey(node: TypeNode): string {
@@ -181,12 +185,12 @@
 	}
 </script>
 
-<header
-	class={`fixed ${headerStyle} bg-base-100/88 border-b border-base-300 text-base-content z-50 flex items-center px-4`}
->
-	<div class="text-3xl font-bold select-none">DAS Console</div>
+<div class="min-h-screen flex flex-col bg-base-100 text-base-content">
+<header class="sticky top-0 z-50 border-b border-base-300 bg-base-100 px-4 py-3 sm:px-6">
+	<div class="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-x-6 gap-y-3">
+	<div class="mr-auto text-2xl font-bold select-none whitespace-nowrap">DAS Console</div>
 
-	<div class="ml-auto flex items-center gap-2">
+	<div class="flex flex-wrap items-center gap-2">
 		
 		<button
 			class="btn btn-outline btn-info btn-sm"
@@ -195,7 +199,7 @@
 			disabled={appState.HasExternalNodes}
 			class:btn-active={appState.Simulating}
 		>
-		<span class="">{appState.Simulating ? "停止模拟" : "开始模拟"}</span>
+		<span>{appState.Simulating ? "停止模拟" : "开始模拟"}</span>
 		</button>
 
 		<button class="btn btn-outline btn-warning btn-sm" class:btn-active={statsActive} on:click={toggleStats}>
@@ -250,16 +254,14 @@
 			<span class="sr-only">List</span>
 		</button>
 	</div>
+	</div>
 </header>
-<div class={headerStyle}></div>
-<main class="my-2 text-base-content">
+<main class="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">
 	<div
-		class="flex gap-1 flex-wrap"
-		class:flex-col={showChart}
-		class:flex-row={!showChart}
+		class={showChart ? "flex flex-col gap-4" : "node-grid"}
 	>
 		{#if displayCards.length === 0}
-			<div class="mx-2 text-sm text-base-content/60">暂无发现到的 node</div>
+			<div class="col-span-full rounded-xl border border-dashed border-base-300 bg-base-200 px-6 py-12 text-center text-sm text-base-content/70">暂无发现到的节点</div>
 		{:else}
 			{#each displayCards as item (item.nodeKey)}
 				{#if item.kind === "connected"}
@@ -276,13 +278,13 @@
 		{/if}
 	</div>
 </main>
-<div class={footerStyle}></div>
-<footer
-	class={`fixed ${footerStyle} border-t border-base-300 z-40 bg-base-100/88 text-base-content flex items-center px-4 gap-2`}
->
-	<div class="text-sm text-base-content/70 select-none">节点数: {nodes.length}</div>
-	<div class="ml-auto text-sm text-base-content/60 select-none">模拟: {appState.Simulating ? "进行中" : "未开始"} | 统计: {statsActive ? "进行中" : "未开始"} | 录制: {recordingActive ? "进行中" : "未开始"}</div>
+<footer class="border-t border-base-300 bg-base-100 px-4 py-3 text-sm text-base-content/70 sm:px-6">
+	<div class="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-1">
+		<div class="select-none">节点数: {nodes.length}</div>
+		<div class="select-none">模拟: {appState.Simulating ? "进行中" : "未开始"} · 统计: {statsActive ? "进行中" : "未开始"} · 录制: {recordingActive ? "进行中" : "未开始"}</div>
+	</div>
 </footer>
+</div>
 
 {#if showUdevDialog}
 	<dialog class="modal modal-open">
@@ -301,6 +303,12 @@
 {/if}
 
 <style>
+	.node-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+		gap: 1rem;
+	}
+
 	:global(html) {
 		/* reserve the vertical scrollbar space so layout doesn't shift when content overflows */
 		overflow-y: scroll;
